@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Cell Container</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create bottom part (2/3 of the potato)
+        const bottomGeometry = new THREE.SphereGeometry(1, 32, 32, 0, Math.PI * 2, Math.PI / 3, Math.PI / 1.5);
+        const innerBottomGeometry = new THREE.SphereGeometry(0.95, 32, 32, 0, Math.PI * 2, Math.PI / 3, Math.PI / 1.5);
+        
+        // Function to deform geometry to make it potato-like
+        function deformGeometry(geometry) {
+            const positions = geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const x = positions.getX(i);
+                const y = positions.getY(i);
+                const z = positions.getZ(i);
+                
+                // Calculate how close we are to the bottom (y is negative at bottom)
+                const yFactor = Math.max(0, (y + 1) / 2); // 0 at bottom, 1 at top
+                
+                // Add random bumps and deformations, reduced near bottom
+                const noise = (Math.sin(x * 5) * 0.1 + Math.cos(y * 4) * 0.1 + Math.sin(z * 3) * 0.1) * yFactor;
+                
+                // Make it slightly elongated, with less deformation at bottom
+                positions.setXYZ(
+                    i,
+                    x * (1.2 + noise),
+                    y * (1 + noise * yFactor), // Less vertical deformation at bottom
+                    z * (0.8 + noise)
+                );
+            }
+            geometry.computeVertexNormals();
+        }
+
+        // Apply deformations to geometries
+        [bottomGeometry, innerBottomGeometry].forEach(deformGeometry);
+
+        // Create materials
+        const outerMaterial = new THREE.MeshPhongMaterial({
+            color: 0xd4b374,  // Sandy brown color
+            shininess: 0,     // Removed shininess
+            specular: 0x000000, // Removed specular highlight
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9
+        });
+
+        const innerMaterial = new THREE.MeshPhongMaterial({
+            color: 0x4169E1,  // Royal blue color
+            shininess: 0,     // Removed shininess
+            specular: 0x000000, // Removed specular highlight
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.7      // More translucent
+        });
+
+        // Create meshes
+        const bottomOuter = new THREE.Mesh(bottomGeometry, outerMaterial);
+        const bottomInner = new THREE.Mesh(innerBottomGeometry, innerMaterial);
+
+        // Create a sphere for the wider end
+        const sphereGeometry = new THREE.SphereGeometry(0.3, 128, 128, 0, Math.PI * 1.5); // Increased segments for better detail
+
+        // Function to create random pores on the sphere
+        function createPores(geometry) {
+            const positions = geometry.attributes.position;
+            const normals = geometry.attributes.normal;
+            
+            // Create random pore centers
+            const numPores = 150; // Increased number of pores since they're smaller
+            const pores = [];
+            for (let i = 0; i < numPores; i++) {
+                // Generate random spherical coordinates
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                // Convert to cartesian coordinates on unit sphere
+                pores.push({
+                    x: Math.sin(phi) * Math.cos(theta),
+                    y: Math.sin(phi) * Math.sin(theta),
+                    z: Math.cos(phi),
+                    radius: 0.01 + Math.random() * 0.01 // Smaller pore size (0.01-0.02 instead of 0.03-0.05)
+                });
+            }
+            
+            for (let i = 0; i < positions.count; i++) {
+                const x = positions.getX(i);
+                const y = positions.getY(i);
+                const z = positions.getZ(i);
+                
+                // Get the normal for this vertex
+                const nx = normals.getX(i);
+                const ny = normals.getY(i);
+                const nz = normals.getZ(i);
+                
+                // Check if this is an outer surface point (dot product with normal should be positive)
+                const dotProduct = (x * nx + y * ny + z * nz) / Math.sqrt(x*x + y*y + z*z);
+                if (dotProduct <= 0) continue; // Skip inner surface points
+                
+                // Calculate distance to each pore center and create indentation
+                let totalIndentation = 0;
+                pores.forEach(pore => {
+                    const dx = x - pore.x * 0.3; // Scale to sphere size
+                    const dy = y - pore.y * 0.3;
+                    const dz = z - pore.z * 0.3;
+                    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                    
+                    // Create sharp-edged hole effect
+                    if (distance < pore.radius) {
+                        const depth = 0.02 * (1 - distance/pore.radius); // Reduced depth from 0.04 to 0.02
+                        totalIndentation = Math.max(totalIndentation, depth);
+                    }
+                });
+                
+                // Apply indentation along normal vector
+                positions.setXYZ(
+                    i,
+                    x - nx * totalIndentation,
+                    y - ny * totalIndentation,
+                    z - nz * totalIndentation
+                );
+            }
+            geometry.computeVertexNormals();
+        }
+
+        // Create sphere mesh first
+        const sphereMaterial = new THREE.MeshPhongMaterial({
+            color: 0xe6c588,  // Slightly lighter than the main structure
+            shininess: 0,     // Removed shininess
+            specular: 0x000000, // Removed specular highlight
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide  // Show both sides of the cut
+        });
+
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.position.y = 0.4;
+        sphere.position.x = -0.6;
+        sphere.position.z = 0.1;
+        sphere.rotation.x = Math.PI;
+        sphere.rotation.y = Math.PI * 1.5;
+        sphere.rotation.z = Math.PI * 0.5;
+
+        // Function to create rough endoplasmic reticulum
+        function createRER() {
+            const rerGroup = new THREE.Group();
+            
+            // Create the main membrane material
+            const membraneMaterial = new THREE.MeshPhongMaterial({
+                color: 0xADD8E6,  // Light blue
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+
+            // Create multiple cisternae (flattened sacs) with horizontal arrangement
+            const numCisternae = 5;
+            const cisternaeSpacing = 0.08;
+            
+            for (let i = 0; i < numCisternae; i++) {
+                // Create a curved surface for each cisterna with horizontal orientation
+                const curve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0.15, 0, 0.02),
+                    new THREE.Vector3(0.3, 0, 0.04),
+                    new THREE.Vector3(0.45, 0, 0.02),
+                    new THREE.Vector3(0.6, 0, 0)
+                ]);
+
+                // Create geometry for the cisterna
+                const geometry = new THREE.TubeGeometry(curve, 64, 0.03, 8, false);
+                const cisterna = new THREE.Mesh(geometry, membraneMaterial);
+                
+                // Position each cisterna with horizontal spacing
+                cisterna.position.x = i * cisternaeSpacing;
+                cisterna.position.z = Math.sin(i * Math.PI / 4) * 0.03;
+                
+                // Create ribosomes along the cisterna
+                const numRibosomes = 15;
+                for (let j = 0; j < numRibosomes; j++) {
+                    const ribosomeGeometry = new THREE.SphereGeometry(0.008, 8, 8);
+                    const ribosomeMaterial = new THREE.MeshPhongMaterial({
+                        color: 0x8B4513,
+                        shininess: 0
+                    });
+                    const ribosome = new THREE.Mesh(ribosomeGeometry, ribosomeMaterial);
+                    
+                    // Position ribosomes along the horizontal cisterna
+                    const t = j / (numRibosomes - 1);
+                    const point = curve.getPoint(t);
+                    ribosome.position.set(
+                        point.x + i * cisternaeSpacing + (Math.random() - 0.5) * 0.01,
+                        point.y + (Math.random() - 0.5) * 0.01,
+                        point.z + (Math.random() - 0.5) * 0.01
+                    );
+                    
+                    rerGroup.add(ribosome);
+                }
+                
+                // Create connecting tubules between cisternae
+                if (i < numCisternae - 1) {
+                    const tubuleCurve = new THREE.CatmullRomCurve3([
+                        new THREE.Vector3(
+                            i * cisternaeSpacing,
+                            0,
+                            Math.sin(i * Math.PI / 4) * 0.03
+                        ),
+                        new THREE.Vector3(
+                            (i + 0.5) * cisternaeSpacing,
+                            0,
+                            Math.sin((i + 0.5) * Math.PI / 4) * 0.03
+                        ),
+                        new THREE.Vector3(
+                            (i + 1) * cisternaeSpacing,
+                            0,
+                            Math.sin((i + 1) * Math.PI / 4) * 0.03
+                        )
+                    ]);
+                    
+                    const tubuleGeometry = new THREE.TubeGeometry(tubuleCurve, 32, 0.015, 8, false);
+                    const tubule = new THREE.Mesh(tubuleGeometry, membraneMaterial);
+                    rerGroup.add(tubule);
+                }
+                
+                rerGroup.add(cisterna);
+            }
+            
+            return rerGroup;
+        }
+
+        // Create and position RER
+        const rer = createRER();
+        // Position RER to attach to outside of nuclear envelope within potato structure
+        rer.position.set(-0.6, 0.4, 0.1); // Aligned with sphere position
+        rer.rotation.x = Math.PI * 0.5; // Rotate to horizontal orientation
+        rer.rotation.y = Math.PI * 0.25; // Angle towards mitochondria
+        rer.rotation.z = 0; // Reset Z rotation for horizontal alignment
+        rer.scale.set(0.3, 0.3, 0.3); // Scaled to match sphere size
+
+        // Create a second RER section for more coverage
+        const rer2 = createRER();
+        rer2.position.set(-0.6, 0.4, 0.1); // Same position as first section
+        rer2.rotation.x = Math.PI * 0.5; // Matching horizontal orientation
+        rer2.rotation.y = Math.PI * 0.25; // Matching angle towards mitochondria
+        rer2.rotation.z = 0; // Reset Z rotation
+        rer2.scale.set(0.25, 0.25, 0.25); // Slightly smaller scale
+
+        // Create a third RER section for complete coverage
+        const rer3 = createRER();
+        rer3.position.set(-0.6, 0.4, 0.1); // Same position as first section
+        rer3.rotation.x = Math.PI * 0.5; // Matching horizontal orientation
+        rer3.rotation.y = Math.PI * 0.25; // Matching angle towards mitochondria
+        rer3.rotation.z = 0; // Reset Z rotation
+        rer3.scale.set(0.2, 0.2, 0.2); // Smaller scale for variety
+
+        // Add all RER sections to the sphere (nuclear envelope)
+        sphere.add(rer);
+        sphere.add(rer2);
+        sphere.add(rer3);
+
+        // Apply pores to sphere geometry
+        createPores(sphereGeometry);
+
+        // Create inner smaller sphere
+        const innerSphereGeometry = new THREE.SphereGeometry(0.08, 32, 32); // Reduced from 0.15 to 0.08
+        const innerSphereMaterial = new THREE.MeshPhongMaterial({
+            color: 0xc4a364,  // Slightly darker color
+            shininess: 0,
+            specular: 0x000000,
+            transparent: true,
+            opacity: 0.9
+        });
+        const innerSphere = new THREE.Mesh(innerSphereGeometry, innerSphereMaterial);
+        
+        // Add inner sphere to the main sphere
+        sphere.add(innerSphere); // This will make inner sphere inherit outer sphere's transformations
+
+        // Create group for bottom part
+        const potatoGroup = new THREE.Group();
+        potatoGroup.add(bottomOuter);
+        potatoGroup.add(bottomInner);
+        potatoGroup.add(sphere); // Add sphere to the group
+        scene.add(potatoGroup);
+
+        // Create text label for nuclear envelope and nucleus
+        const loader = new THREE.FontLoader();
+        const textGroup = new THREE.Group();
+        const nucleusTextGroup = new THREE.Group();
+        const mitochondriaTextGroup = new THREE.Group();
+        scene.add(textGroup);
+        scene.add(nucleusTextGroup);
+        scene.add(mitochondriaTextGroup);
+        
+        // Create text meshes with loaded font
+        loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+            // Nuclear Envelope text
+            const envelopeGeometry = new THREE.TextGeometry('Nuclear Envelope', {
+                font: font,
+                size: 0.12,
+                height: 0.02,
+                curveSegments: 12,
+                bevelEnabled: false
+            });
+            
+            const textMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0
+            });
+            
+            textMesh = new THREE.Mesh(envelopeGeometry, textMaterial);
+            // Center the text
+            envelopeGeometry.computeBoundingBox();
+            const textWidth = envelopeGeometry.boundingBox.max.x - envelopeGeometry.boundingBox.min.x;
+            textMesh.position.x = -textWidth / 2;
+            textGroup.add(textMesh);
+
+            // Nucleus text
+            const nucleusGeometry = new THREE.TextGeometry('Nucleus', {
+                font: font,
+                size: 0.1,
+                height: 0.02,
+                curveSegments: 12,
+                bevelEnabled: false
+            });
+            
+            const nucleusTextMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0
+            });
+            
+            nucleusTextMesh = new THREE.Mesh(nucleusGeometry, nucleusTextMaterial);
+            // Center the text
+            nucleusGeometry.computeBoundingBox();
+            const nucleusTextWidth = nucleusGeometry.boundingBox.max.x - nucleusGeometry.boundingBox.min.x;
+            nucleusTextMesh.position.x = -nucleusTextWidth / 2;
+            nucleusTextGroup.add(nucleusTextMesh);
+
+            // Mitochondria text
+            const mitochondriaGeometry = new THREE.TextGeometry('Mitochondria', {
+                font: font,
+                size: 0.1,
+                height: 0.02,
+                curveSegments: 12,
+                bevelEnabled: false
+            });
+            
+            const mitochondriaTextMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0
+            });
+            
+            mitochondriaTextMesh = new THREE.Mesh(mitochondriaGeometry, mitochondriaTextMaterial);
+            // Center the text
+            mitochondriaGeometry.computeBoundingBox();
+            const mitochondriaTextWidth = mitochondriaGeometry.boundingBox.max.x - mitochondriaGeometry.boundingBox.min.x;
+            mitochondriaTextMesh.position.x = -mitochondriaTextWidth / 2;
+            mitochondriaTextGroup.add(mitochondriaTextMesh);
+        });
+        
+        textGroup.visible = false;
+        nucleusTextGroup.visible = false;
+        mitochondriaTextGroup.visible = false;
+
+        // Create 2D oval with glowing cristae parallel to sphere
+        const ovalShape = new THREE.Shape();
+        const ovalWidth = 0.35;
+        const ovalHeight = 0.2;
+        
+        // Draw oval path
+        ovalShape.ellipse(0, 0, ovalWidth, ovalHeight, 0, Math.PI * 2);
+        
+        // Create geometry from shape
+        const ovalGeometry = new THREE.ShapeGeometry(ovalShape);
+        const ovalMaterial = new THREE.MeshPhongMaterial({
+            color: 0x006400, // Dark green color
+            shininess: 100,
+            specular: 0x444444
+        });
+        
+        const ovalMesh = new THREE.Mesh(ovalGeometry, ovalMaterial);
+        
+        // Create multiple layers of cristae for glow effect
+        function createCristaeLayer(color, lineWidth, zOffset) {
+            const points = [];
+            const numFolds = 8; // Number of folds
+            const foldWidth = ovalWidth * 0.08; // Reduced width to stay away from edges
+            const edgeMargin = 0.05; // Margin from the edge of the oval
+            
+            // Create vertical folds from top to bottom
+            for (let i = 0; i < numFolds; i++) {
+                const xOffset = -ovalWidth + (i * 2 * ovalWidth) / (numFolds - 1);
+                const foldPoints = [];
+                const numPointsPerFold = 100; // High number of points for smooth curves
+                
+                // Create complete fold from top to bottom
+                for (let j = 0; j < numPointsPerFold; j++) {
+                    const t = j / (numPointsPerFold - 1);
+                    
+                    // Calculate base y position (from top to bottom)
+                    const baseY = (t * 2 - 1) * ovalHeight;
+                    
+                    // Create smooth undulating curve with increased amplitude
+                    const waveFreq = 1; // Single wave for each fold
+                    const baseX = xOffset + Math.sin(t * Math.PI * waveFreq) * foldWidth;
+                    
+                    // Add depth variation
+                    const z = zOffset + Math.sin(t * Math.PI * waveFreq) * 0.015; // Increased depth variation
+                    
+                    // Calculate point within oval bounds with margin
+                    const x = baseX;
+                    const y = baseY;
+                    
+                    // Check if point is within oval bounds with margin
+                    const normalizedX = x / ovalWidth;
+                    const normalizedY = y / ovalHeight;
+                    const distanceFromEdge = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+                    
+                    if (distanceFromEdge <= 1 - edgeMargin) {
+                        foldPoints.push(new THREE.Vector3(x, y, z));
+                    }
+                }
+                
+                // Add main fold points
+                points.push(...foldPoints);
+                
+                // Create return path with slight offset for depth
+                for (let j = foldPoints.length - 1; j >= 0; j--) {
+                    const point = foldPoints[j];
+                    const depthVariation = 0.01 * (1 - Math.abs(point.x/ovalWidth)); // Increased depth variation
+                    points.push(new THREE.Vector3(
+                        point.x + depthVariation,
+                        point.y,
+                        point.z - 0.008 // Increased z-offset
+                    ));
+                }
+                
+                // Add connecting curves between folds if not the last fold
+                if (i < numFolds - 1) {
+                    const nextXOffset = -ovalWidth + ((i + 1) * 2 * ovalWidth) / (numFolds - 1);
+                    const numConnectingPoints = 20; // Reduced number of connecting points
+                    
+                    // Create smooth transitions between folds
+                    for (let k = 0; k < numConnectingPoints; k++) {
+                        const t = k / (numConnectingPoints - 1);
+                        const x = xOffset + (nextXOffset - xOffset) * t;
+                        const y = ovalHeight * Math.sin(t * Math.PI); // Create curved connection
+                        const z = zOffset + Math.sin(t * Math.PI) * 0.008; // Increased z-offset
+                        
+                        // Check if connecting point is within oval bounds with margin
+                        const normalizedX = x / ovalWidth;
+                        const normalizedY = y / ovalHeight;
+                        const distanceFromEdge = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+                        
+                        if (distanceFromEdge <= 1 - edgeMargin) {
+                            points.push(new THREE.Vector3(x, y, z));
+                        }
+                    }
+                }
+            }
+            
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({
+                color: color,
+                linewidth: lineWidth,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            return new THREE.Line(geometry, material);
+        }
+        
+        // Create multiple layers for enhanced depth effect
+        const cristaeGroup = new THREE.Group();
+        cristaeGroup.add(createCristaeLayer(0x90EE90, 4, 0.05)); // Outer light green with increased thickness
+        cristaeGroup.add(createCristaeLayer(0x98FB98, 3.5, 0.04)); // Middle light green with increased thickness
+        cristaeGroup.add(createCristaeLayer(0x8FBC8F, 3, 0.03)); // Inner light green with increased thickness
+        
+        // Create a group for oval and cristae
+        const ovalGroup = new THREE.Group();
+        ovalGroup.add(ovalMesh);
+        ovalGroup.add(cristaeGroup);
+        
+        // Position the oval group parallel to sphere
+        ovalGroup.position.set(0.3, 0.4, 0.1); // Move further from sphere
+        ovalGroup.rotation.x = -Math.PI / 2; // Keep current upward orientation
+        ovalGroup.rotation.y = 0; // Keep current Y rotation
+        ovalGroup.rotation.z = 0; // Keep current Z rotation
+        ovalGroup.scale.set(0.6, 0.6, 0.6); // Maintain scale
+        
+        // Add oval group to bottomInner for inner surface placement
+        bottomInner.add(ovalGroup);
+        
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        
+        // Add multiple directional lights for better 3D effect
+        const lights = [
+            { color: 0xffffff, intensity: 1, position: [5, 5, 5] },
+            { color: 0xffd700, intensity: 0.5, position: [-5, -5, -5] },
+            { color: 0xffe4b5, intensity: 0.3, position: [0, 5, -5] }
+        ];
+
+        lights.forEach(light => {
+            const directionalLight = new THREE.DirectionalLight(light.color, light.intensity);
+            directionalLight.position.set(...light.position);
+            scene.add(directionalLight);
+        });
+
+        // Position camera
+        camera.position.z = 5;
+        camera.position.y = 1;
+        camera.lookAt(0, 0, 0);
+
+        // Add raycaster for click detection
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        // Variables for camera animation
+        let isTransitioning = false;
+        let transitionStartPos = new THREE.Vector3();
+        let transitionTargetPos = new THREE.Vector3();
+        let transitionStartLook = new THREE.Vector3();
+        let transitionTargetLook = new THREE.Vector3();
+        let transitionProgress = 0;
+        let transitionDuration = 1000; // milliseconds
+        let transitionStartTime = 0;
+        let isZoomedIn = false;
+        
+        // Store original camera position
+        const originalCameraPos = new THREE.Vector3(5, 1, 5);
+        const originalLookAt = new THREE.Vector3(0, 0, 0);
+
+        // Click handler
+        function onMouseClick(event) {
+            // Calculate mouse position in normalized device coordinates
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the picking ray with the camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Calculate objects intersecting the picking ray
+            const intersects = raycaster.intersectObjects([sphere, ovalMesh, innerSphere], true);
+
+            if (intersects.length > 0 && !isTransitioning) {
+                const intersectedObject = intersects[0].object;
+                
+                if (!isZoomedIn) {
+                    // Start zoom in transition
+                    startCameraTransition(intersectedObject);
+                } else {
+                    // Zoom out to original position
+                    startCameraTransition(null);
+                }
+            }
+        }
+
+        // Function to start camera transition
+        function startCameraTransition(targetObject) {
+            isTransitioning = true;
+            transitionProgress = 0;
+            transitionStartTime = Date.now();
+            
+            // Store start position
+            transitionStartPos.copy(camera.position);
+            camera.getWorldDirection(transitionStartLook);
+            transitionStartLook.add(camera.position);
+            
+            if (targetObject) {
+                // Calculate target position for zoom in
+                const targetPos = new THREE.Vector3();
+                targetObject.getWorldPosition(targetPos);
+                
+                if (targetObject === sphere) {
+                    // Position camera closer to sphere with reduced zoom
+                    transitionTargetPos.set(
+                        targetPos.x + 1.0,
+                        targetPos.y + 0.6,
+                        targetPos.z + 1.0
+                    );
+                    transitionTargetLook.copy(targetPos);
+                    
+                    // Show and position text for nuclear envelope
+                    textGroup.visible = true;
+                    nucleusTextGroup.visible = false;
+                    mitochondriaTextGroup.visible = false;
+                    textGroup.position.copy(targetPos);
+                    textGroup.position.y += 0.5;
+                    textGroup.position.z += 0.3;
+                    textMesh.material.opacity = 0;
+                    
+                } else if (targetObject === innerSphere) {
+                    // Get world position of inner sphere
+                    const worldPos = new THREE.Vector3();
+                    innerSphere.getWorldPosition(worldPos);
+                    
+                    // Position camera at an angle to see inside the nuclear envelope
+                    transitionTargetPos.set(
+                        worldPos.x + 0.5,
+                        worldPos.y + 0.4,
+                        worldPos.z + 0.5
+                    );
+                    transitionTargetLook.copy(worldPos);
+                    
+                    // Show and position text for nucleus
+                    textGroup.visible = false;
+                    nucleusTextGroup.visible = true;
+                    mitochondriaTextGroup.visible = false;
+                    nucleusTextGroup.position.copy(worldPos);
+                    nucleusTextGroup.position.y += 0.3;
+                    nucleusTextGroup.position.x += 0.2;
+                    nucleusTextGroup.position.z += 0.3;
+                    nucleusTextMesh.material.opacity = 0;
+                    
+                } else if (targetObject === ovalMesh) {
+                    // Position camera closer to oval with reduced zoom
+                    transitionTargetPos.set(
+                        targetPos.x + 0.8,
+                        targetPos.y + 0.5,
+                        targetPos.z + 0.8
+                    );
+                    transitionTargetLook.copy(targetPos);
+                    
+                    // Show and position text for mitochondria
+                    textGroup.visible = false;
+                    nucleusTextGroup.visible = false;
+                    mitochondriaTextGroup.visible = true;
+                    mitochondriaTextGroup.position.copy(targetPos);
+                    mitochondriaTextGroup.position.y += 0.4;
+                    mitochondriaTextGroup.position.z += 0.3;
+                    mitochondriaTextMesh.material.opacity = 0;
+                }
+                isZoomedIn = true;
+            } else {
+                // Zoom out to original position
+                transitionTargetPos.copy(originalCameraPos);
+                transitionTargetLook.copy(originalLookAt);
+                isZoomedIn = false;
+                // Hide all texts when zooming out
+                textGroup.visible = false;
+                nucleusTextGroup.visible = false;
+                mitochondriaTextGroup.visible = false;
+            }
+        }
+
+        // Function to update camera position during transition
+        function updateCameraTransition() {
+            if (!isTransitioning) return;
+            
+            const elapsed = Date.now() - transitionStartTime;
+            transitionProgress = Math.min(elapsed / transitionDuration, 1);
+            
+            // Use easing function for smooth transition
+            const eased = easeInOutCubic(transitionProgress);
+            
+            // Interpolate position
+            camera.position.lerpVectors(transitionStartPos, transitionTargetPos, eased);
+            
+            // Interpolate look at point
+            const currentLookAt = new THREE.Vector3();
+            currentLookAt.lerpVectors(transitionStartLook, transitionTargetLook, eased);
+            camera.lookAt(currentLookAt);
+            
+            // Fade in text if visible
+            if (textGroup.visible) {
+                textMesh.material.opacity = eased;
+                textMesh.lookAt(camera.position);
+            }
+            if (nucleusTextGroup.visible) {
+                nucleusTextMesh.material.opacity = eased;
+                nucleusTextMesh.lookAt(camera.position);
+            }
+            if (mitochondriaTextGroup.visible) {
+                mitochondriaTextMesh.material.opacity = eased;
+                mitochondriaTextMesh.lookAt(camera.position);
+            }
+            
+            if (transitionProgress >= 1) {
+                isTransitioning = false;
+            }
+        }
+
+        // Easing function for smooth animation
+        function easeInOutCubic(t) {
+            return t < 0.5
+                ? 4 * t * t * t
+                : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        // Add click event listener
+        document.addEventListener('click', onMouseClick);
+
+        // Animation variables
+        let rotationSpeed = 0.0001;
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
+        // Mouse event listeners
+        document.addEventListener('mousedown', (event) => {
+            isDragging = true;
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+        });
+        document.addEventListener('mouseup', () => isDragging = false);
+        document.addEventListener('mousemove', (event) => {
+            if (!isDragging) return;
+            
+            // Calculate delta movement
+            const deltaX = event.clientX - lastMouseX;
+            const deltaY = event.clientY - lastMouseY;
+            
+            // Update last position
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+            
+            // Apply controlled rotation based on delta movement with increased sensitivity
+            mouseX += deltaX * 0.002;
+            mouseY += deltaY * 0.001;
+            
+            // Limit vertical rotation to prevent flipping
+            mouseY = Math.max(-Math.PI/4, Math.min(Math.PI/4, mouseY));
+        });
+
+        // Wheel event for zoom with increased sensitivity
+        document.addEventListener('wheel', (event) => {
+            camera.position.z += event.deltaY * 0.005;
+            camera.position.z = Math.min(Math.max(2, camera.position.z), 5);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update camera transition
+            updateCameraTransition();
+
+            // Only apply rotation when not zoomed in
+            if (!isZoomedIn) {
+                // Smooth rotation following mouse
+                if (isDragging) {
+                    targetRotationX += (mouseX - targetRotationX) * 0.015;
+                    targetRotationY += (mouseY - targetRotationY) * 0.01;
+                } else {
+                    // Gentle auto-rotation when not dragging
+                    potatoGroup.rotation.y += rotationSpeed;
+                }
+
+                // Apply rotations with increased sensitivity
+                potatoGroup.rotation.x = targetRotationY;
+                potatoGroup.rotation.y += targetRotationX * 0.03;
+            }
+
+            // Make text always face camera if visible
+            if (textGroup.visible) {
+                textMesh.lookAt(camera.position);
+            }
+            if (nucleusTextGroup.visible) {
+                nucleusTextMesh.lookAt(camera.position);
+            }
+            if (mitochondriaTextGroup.visible) {
+                mitochondriaTextMesh.lookAt(camera.position);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html> 
