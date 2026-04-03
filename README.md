@@ -1,41 +1,28 @@
 # Cells
 
-The **Cells** interactive provides a 3D visualization of cell structures. Using color-coded components and interactive features, students can explore the parts of a cell and their functions in an engaging way.
+Single-page WebGL lesson built with Three.js (loaded from CDN) inlined in `index.html`. [Standards.md](Standards.md) describes NGSS alignment.
 
----
+**Live:** https://content-interactives.github.io/cells
 
-## 🔗 Live Interactive
+## Development
 
-Try it out here:  
-👉 [https://content-interactives.github.io/cells](https://content-interactives.github.io/cells)
+No install or bundler. Options:
 
----
+- Open `index.html` in a browser (file:// may restrict some APIs—prefer a server).  
+- From this directory:
 
-## 🌐 Where This Interactive Is Being Used
+```bash
+npx serve .
+```
 
-This interactive is currently featured in the following locations:
+## Layout
 
-- <img width="20" height="20" alt="image" src="https://github.com/user-attachments/assets/5d12571f-8e12-4441-98ab-c0bc94069a96" /> **CK-12 Intent Response**  
-  - 👉 PRODUCTION: PENDING  
-  - 👉 MASTER: PENDING  
-- 📘 **CK-12 Flexbooks**
-  - 👉 PENDING
+- `index.html` — entire scene, scripts, and styles (single-file app)
 
----
+## Stack
 
-## 📚 Standards & Subjects
+Three.js r128 (cdnjs), HTML5, inline CSS/JS.
 
-This interactive aligns with the following topics and standards:
+## Deployment
 
-- **📂 Subject Area**: High School Biology  
-- **🧮 Topic**: Cell Structure & Function  
-- **📏 NGSS Alignment**:  
-  - HS-LS1-2 – Develop and use a model to illustrate the hierarchical organization of interacting systems that provide specific functions within multicellular organisms.  
-  - HS-LS1.A – Structure and Function of Cells
-
----
-
-## 🛠️ Developer Notes
-
-- Built with: Three.js, HTML5, CSS3, JavaScript  
-- Deployed via GitHub Pages
+Push `index.html` (and any future assets) to the static host root for the `cells` GitHub Pages site.
